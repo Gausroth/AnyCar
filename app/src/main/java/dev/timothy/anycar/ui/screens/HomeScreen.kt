@@ -71,6 +71,8 @@ fun HomeScreen(
     meta: MetaSettings = MetaSettings(),
     onMetaAi: (Boolean) -> Unit = {},
     onMetaSpeech: (Boolean) -> Unit = {},
+    voiceViaCarCall: Boolean = true,
+    onVoiceViaCarCall: (Boolean) -> Unit = {},
 ) {
     Scaffold { insets ->
         Column(
@@ -106,6 +108,17 @@ fun HomeScreen(
             }
 
             OutlinedButton(onClick = onAddCar, modifier = Modifier.fillMaxWidth()) { Text("Add a car") }
+
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    SettingSwitch(
+                        "Car speakers",
+                        "Play AnyCar's voice through your car's phone-call channel, so the car speakers play it " +
+                            "whatever source the car is on. Music pauses while AnyCar talks.",
+                        voiceViaCarCall, onVoiceViaCarCall,
+                    )
+                }
+            }
 
             MetaCard(meta, onMetaAi, onMetaSpeech)
 

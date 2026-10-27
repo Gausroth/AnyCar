@@ -49,6 +49,7 @@ fun AnyCarNavHost(nav: NavHostController = rememberNavController()) {
             val vehicles by remember { graph.vehicles.observeAll() }.collectAsStateWithLifecycle(initialValue = emptyList())
             val metaAi by graph.settings.metaAiEnabled.collectAsStateWithLifecycle(initialValue = false)
             val metaSpeech by graph.settings.metaSpeechEnabled.collectAsStateWithLifecycle(initialValue = false)
+            val viaCarCall by graph.settings.voiceViaCarCall.collectAsStateWithLifecycle(initialValue = true)
             val scope = rememberCoroutineScope()
             HomeScreen(
                 vehicles = vehicles,
@@ -58,6 +59,8 @@ fun AnyCarNavHost(nav: NavHostController = rememberNavController()) {
                 meta = MetaSettings(graph.meta.configured, metaAi, metaSpeech),
                 onMetaAi = { on -> scope.launch { graph.settings.setMetaAiEnabled(on) } },
                 onMetaSpeech = { on -> scope.launch { graph.settings.setMetaSpeechEnabled(on) } },
+                voiceViaCarCall = viaCarCall,
+                onVoiceViaCarCall = { on -> scope.launch { graph.settings.setVoiceViaCarCall(on) } },
             )
         }
         composable(Routes.FIRST_RUN) {

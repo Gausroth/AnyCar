@@ -25,6 +25,10 @@ class SettingsStore(ctx: Context) {
     val metaAiEnabled: Flow<Boolean> = flag(META_AI_ENABLED, false)
     val metaSpeechEnabled: Flow<Boolean> = flag(META_SPEECH_ENABLED, false)
 
+    /** Plays AnyCar's voice over the car's phone channel ([dev.timothy.anycar.car.ScoLink]) while connected. */
+    val voiceViaCarCall: Flow<Boolean> = flag(VOICE_VIA_CAR_CALL, true)
+
+    suspend fun setVoiceViaCarCall(v: Boolean) = set(VOICE_VIA_CAR_CALL, v)
     suspend fun setFirstRunDone(v: Boolean) = set(FIRST_RUN_DONE, v)
     suspend fun setCloudSpeechAllowed(v: Boolean) = set(CLOUD_SPEECH_ALLOWED, v)
     suspend fun setMetaAiEnabled(v: Boolean) = set(META_AI_ENABLED, v)
@@ -42,5 +46,6 @@ class SettingsStore(ctx: Context) {
         val LAST_VEHICLE_ID = longPreferencesKey("last_vehicle_id")
         val META_AI_ENABLED = booleanPreferencesKey("meta_ai_enabled")
         val META_SPEECH_ENABLED = booleanPreferencesKey("meta_speech_enabled")
+        val VOICE_VIA_CAR_CALL = booleanPreferencesKey("voice_via_car_call")
     }
 }

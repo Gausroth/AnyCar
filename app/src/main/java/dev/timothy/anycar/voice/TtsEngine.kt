@@ -21,6 +21,7 @@ class TtsEngine(ctx: Context, private val focus: AudioFocus) {
     private var ready = false
     private var failed = false
     private var pending: Pair<String, () -> Unit>? = null
+    private var pendingViaCall = false
 
     var enabled = true
 
@@ -36,12 +37,6 @@ class TtsEngine(ctx: Context, private val focus: AudioFocus) {
                 failed = true
                 Log.w(TAG, "No local voice; text only")
             }
-            tts.setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ASSISTANT)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build(),
-            )
             tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(id: String) = Unit
                 override fun onDone(id: String) { finish(id) }
@@ -50,7 +45,7 @@ class TtsEngine(ctx: Context, private val focus: AudioFocus) {
             })
             ready = true
         }
-        pending?.let { (text, done) -> pending = null; speak(text, done) }
+        pending?.let { (text, done) -> pending = null; speak(text, pendingViaCall, done) }
     }
 
     private fun pickLanguage(): Boolean {
@@ -58,13 +53,22 @@ class TtsEngine(ctx: Context, private val focus: AudioFocus) {
         return ok(tts.setLanguage(Locale.US)) || ok(tts.setLanguage(Locale.getDefault()))
     }
 
-    /** Speaks [text] and calls [onDone] on the main thread when it ends, fails, or is skipped. */
-    fun speak(text: String, onDone: () -> Unit = {}) {
+    /**
+     * Speaks [text] and calls [onDone] on the main thread when it ends, fails, or is skipped.
+     * With [viaCall], it plays as call audio, for when the car's phone channel ([ScoLink]) is open.
+     */
+    fun speak(text: String, viaCall: Boolean = false, onDone: () -> Unit = {}) {
         when {
             !enabled || failed -> onDone()
-            !ready -> pending = text to onDone
+            !ready -> { pending = text to onDone; pendingViaCall = viaCall }
             !focus.forSpeaking() -> onDone()  // focus denied, e.g. during a call: show text only
             else -> {
+                tts.setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(if (viaCall) AudioAttributes.USAGE_VOICE_COMMUNICATION else AudioAttributes.USAGE_ASSISTANT)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build(),
+                )
                 val id = UUID.randomUUID().toString()
                 callbacks[id] = onDone
                 tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, id)

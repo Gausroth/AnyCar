@@ -9,6 +9,7 @@ import dev.timothy.anycar.actions.SpokenResult
 import dev.timothy.anycar.actions.UiChoice
 import dev.timothy.anycar.ai.MetaError
 import dev.timothy.anycar.car.AudioFocus
+import dev.timothy.anycar.car.ScoLink
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -44,6 +45,9 @@ class VoiceController(
     private val cloudAllowed: () -> Boolean,
     private val metaSpeechOn: () -> Boolean,
     private val metaSpeech: MetaSpeech,
+    private val sco: ScoLink,
+    /** True when replies should go through the car's phone channel: a connected car, with the setting on. */
+    private val useCarChannel: () -> Boolean,
     /** Turns a transcript into a result. The second argument updates the status line, such as "Thinking…". */
     private val handler: suspend (String, (String) -> Unit) -> SpokenResult,
 ) {
@@ -56,6 +60,8 @@ class VoiceController(
     private var missesInARow = 0
     private var retriedSilently = false
     private var work: Job? = null
+    private var speaking: Job? = null
+    private var closeSco: Job? = null
 
     fun refreshPath() = _state.update { it.copy(path = currentPath()) }
 
@@ -71,6 +77,8 @@ class VoiceController(
             else -> { Log.d(TAG, "startListening ignored in ${_state.value.phase}"); return }
         }
         tts.stop()
+        speaking?.cancel()
+        releaseCarChannel()
         refreshPath()
         when (_state.value.path) {
             RecognizerPath.NEEDS_CLOUD_CONSENT -> { show("Voice needs Google or Meta speech on this phone. The buttons still work."); return }
@@ -96,7 +104,7 @@ class VoiceController(
 
     private suspend fun listenMeta() {
         val text = try {
-            metaSpeech.listen()
+            metaSpeech.listen { _state.update { it.copy(message = "Transcribing…") } }
         } catch (e: MetaSpeech.NoSpeech) {
             listener.onError(SpeechRecognizer.ERROR_SPEECH_TIMEOUT); return
         } catch (e: MetaError.Offline) {
@@ -121,14 +129,34 @@ class VoiceController(
         if (BuildConfig.DEBUG) Log.i(TAG, "Reply: ${result.text} | choices=${result.choices.map { it.label }}")
         focus.release()
         _state.update { it.copy(phase = VoicePhase.SPEAKING, message = result.display, choices = result.choices) }
-        tts.speak(result.text) {
+        val finished = {
             _state.update { s -> if (s.phase == VoicePhase.SPEAKING) s.copy(phase = VoicePhase.IDLE) else s }
             onDone()
         }
+        if (!useCarChannel()) {
+            tts.speak(result.text, onDone = finished)
+            return
+        }
+        // Through the car's phone channel, so the car speakers play it whatever source is on.
+        closeSco?.cancel()
+        speaking?.cancel()
+        speaking = scope.launch {
+            val viaCall = sco.open()
+            tts.speak(result.text, viaCall) {
+                // Held briefly, so back-to-back replies don't reopen it.
+                if (viaCall) closeSco = scope.launch { delay(1_500); sco.close() }
+                finished()
+            }
+        }
+    }
+
+    private fun releaseCarChannel() {
+        closeSco?.cancel()
+        if (sco.isOpen) sco.close()
     }
 
     /** Like [say], but returns once speech has finished (or after [timeoutMs], so a stuck engine can't hang a caller). */
-    suspend fun sayAndWait(text: String, timeoutMs: Long = 4_000) {
+    suspend fun sayAndWait(text: String, timeoutMs: Long = 7_000) {
         val done = CompletableDeferred<Unit>()
         say(text) { done.complete(Unit) }
         withTimeoutOrNull(timeoutMs) { done.await() }
@@ -159,8 +187,10 @@ class VoiceController(
 
     fun cancel() {
         work?.cancel()
+        speaking?.cancel()
         engine.cancel()
         tts.stop()
+        releaseCarChannel()
         focus.release()
         _state.update { it.copy(phase = VoicePhase.IDLE) }
     }

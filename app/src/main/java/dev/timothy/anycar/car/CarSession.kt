@@ -49,18 +49,23 @@ class CarSession(
     @Volatile private var cloudAllowed = false
     @Volatile private var ttsEnabled = true
     @Volatile private var metaSpeechOn = false
+    @Volatile private var carChannelOn = true
 
     private val focus = AudioFocus(app)
     private val ttsLazy = lazy { TtsEngine(app, focus).also { it.enabled = ttsEnabled } }
     val tts: TtsEngine by ttsLazy
     private val voiceLazy = lazy {
-        VoiceController(app, tts, focus, { cloudAllowed }, { metaSpeechOn }, metaSpeech) { text, progress -> handler(text, progress) }
+        VoiceController(
+            app, tts, focus, { cloudAllowed }, { metaSpeechOn }, metaSpeech, ScoLink(app),
+            useCarChannel = { carChannelOn && _connected.value },
+        ) { text, progress -> handler(text, progress) }
     }
     val voice: VoiceController by voiceLazy
 
     init {
         scope.launch { settings.cloudSpeechAllowed.collect { cloudAllowed = it } }
         scope.launch { settings.metaSpeechEnabled.collect { metaSpeechOn = it } }
+        scope.launch { settings.voiceViaCarCall.collect { carChannelOn = it } }
         scope.launch {
             settings.ttsEnabled.collect { enabled ->
                 ttsEnabled = enabled
