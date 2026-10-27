@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Exported only so adb can reach it; debug builds only. -->
+        <receiver android:name=".DebugSayReceiver" android:exported="true" />
+    </application>
+</manifest>
