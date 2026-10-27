@@ -14,8 +14,13 @@ import androidx.lifecycle.withStarted
 import dev.timothy.anycar.car.CarModeService
 import dev.timothy.anycar.graph
 import dev.timothy.anycar.ui.screens.CarScreen
-import dev.timothy.anycar.ui.theme.CarTheme
+import dev.timothy.anycar.data.VehicleProfile
+import dev.timothy.anycar.ui.theme.CarScreenTheme
+import dev.timothy.anycar.voice.VoicePhase
 import java.lang.ref.WeakReference
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 
@@ -40,7 +45,7 @@ class CarModeActivity : ComponentActivity() {
         lifecycleScope.launch {
             session.activeVehicle.drop(1).collect { if (it == null) finish() }
         }
-        setContent { CarTheme { CarScreen(onQuit = ::quit) } }
+        setContent { CarScreenTheme { CarScreen(onQuit = ::quit) } }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -49,6 +54,8 @@ class CarModeActivity : ComponentActivity() {
     }
 
     private fun enterFrom(intent: Intent) {
+        // Just bring the running drive forward, as the wheel button does: no re-entry, no service start.
+        if (intent.getBooleanExtra(EXTRA_RESUME, false) && session.activeVehicle.value != null) return
         val id = intent.getLongExtra(EXTRA_VEHICLE_ID, -1)
         val manual = intent.getBooleanExtra(EXTRA_MANUAL, false)
         lifecycleScope.launch {
@@ -56,8 +63,11 @@ class CarModeActivity : ComponentActivity() {
             if (vehicle == null) { finish(); return@launch }
             graph.settings.setLastVehicleId(vehicle.id)
             if (manual || session.activeVehicle.value?.id != vehicle.id) {
-                session.enter(vehicle, connected = !manual && session.connected.value)
+                // Opened by hand while sitting in a connected car still counts as connected.
+                val live = vehicle.btMac?.let { session.sco.carConnected(it) } == true
+                session.enter(vehicle, connected = live || (!manual && session.connected.value))
             }
+            quickProbe(vehicle)
             // Opened from the notification for a connected Bluetooth car whose service was blocked from
             // starting in the background: start it now, while the screen is visible (M1.4).
             if (!manual && vehicle.hasBluetooth && !session.serviceRunning.value) {
@@ -66,6 +76,20 @@ class CarModeActivity : ComponentActivity() {
                         ContextCompat.startForegroundService(this@CarModeActivity, CarModeService.enterIntent(this@CarModeActivity, vehicle))
                     }
                 }
+            }
+        }
+    }
+
+    /**
+     * The quick systems check on every car-mode entry (M3.2), off the main thread so launch isn't delayed.
+     * If something that worked has stopped working, it says so once, after the greeting.
+     */
+    private fun quickProbe(vehicle: VehicleProfile) {
+        graph.appScope.launch {
+            val regression = graph.checker.quick(vehicle, session.connected.value) ?: return@launch
+            delay(4_000)
+            withContext(Dispatchers.Main) {
+                if (session.voice.state.value.phase == VoicePhase.IDLE) session.voice.say(regression)
             }
         }
     }
@@ -94,10 +118,12 @@ class CarModeActivity : ComponentActivity() {
     companion object {
         private const val EXTRA_VEHICLE_ID = "vehicle_id"
         private const val EXTRA_MANUAL = "manual"
+        private const val EXTRA_RESUME = "resume"
 
-        fun intent(ctx: Context, vehicleId: Long, manual: Boolean = false): Intent =
+        fun intent(ctx: Context, vehicleId: Long, manual: Boolean = false, resume: Boolean = false): Intent =
             Intent(ctx, CarModeActivity::class.java)
                 .putExtra(EXTRA_VEHICLE_ID, vehicleId)
                 .putExtra(EXTRA_MANUAL, manual)
+                .putExtra(EXTRA_RESUME, resume)
     }
 }

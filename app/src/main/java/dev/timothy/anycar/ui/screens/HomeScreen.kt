@@ -73,6 +73,9 @@ fun HomeScreen(
     onMetaSpeech: (Boolean) -> Unit = {},
     voiceViaCarCall: Boolean = true,
     onVoiceViaCarCall: (Boolean) -> Unit = {},
+    spokenReplies: Boolean = true,
+    onSpokenReplies: (Boolean) -> Unit = {},
+    onSystemsReport: (VehicleProfile) -> Unit = {},
 ) {
     Scaffold { insets ->
         Column(
@@ -100,8 +103,11 @@ fun HomeScreen(
                             ).joinToString(" · "),
                             style = MaterialTheme.typography.bodyMedium,
                         )
-                        if (vehicles.size > 1) {
-                            OutlinedButton(onClick = { onEnterCarMode(v) }) { Text("Car mode in this car") }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (vehicles.size > 1) {
+                                OutlinedButton(onClick = { onEnterCarMode(v) }) { Text("Car mode in this car") }
+                            }
+                            OutlinedButton(onClick = { onSystemsReport(v) }) { Text("Systems report") }
                         }
                     }
                 }
@@ -110,7 +116,12 @@ fun HomeScreen(
             OutlinedButton(onClick = onAddCar, modifier = Modifier.fillMaxWidth()) { Text("Add a car") }
 
             Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SettingSwitch(
+                        "Spoken replies",
+                        "AnyCar reads its replies aloud. Turned off, replies only show on screen.",
+                        spokenReplies, onSpokenReplies,
+                    )
                     SettingSwitch(
                         "Car speakers",
                         "Play AnyCar's voice through your car's phone-call channel, so the car speakers play it " +

@@ -10,6 +10,8 @@ import dev.timothy.anycar.actions.UiChoice
 import dev.timothy.anycar.ai.MetaError
 import dev.timothy.anycar.car.AudioFocus
 import dev.timothy.anycar.car.ScoLink
+import dev.timothy.anycar.command.Command
+import dev.timothy.anycar.command.CommandParser
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -46,8 +48,8 @@ class VoiceController(
     private val metaSpeechOn: () -> Boolean,
     private val metaSpeech: MetaSpeech,
     private val sco: ScoLink,
-    /** True when replies should go through the car's phone channel: a connected car, with the setting on. */
-    private val useCarChannel: () -> Boolean,
+    /** The Bluetooth address of the car whose phone channel replies should use, or null for normal audio. */
+    private val carChannelMac: () -> String?,
     /** Turns a transcript into a result. The second argument updates the status line, such as "Thinking…". */
     private val handler: suspend (String, (String) -> Unit) -> SpokenResult,
 ) {
@@ -62,12 +64,17 @@ class VoiceController(
     private var work: Job? = null
     private var speaking: Job? = null
     private var closeSco: Job? = null
+    private var answerPrefix: String? = null
 
     fun refreshPath() = _state.update { it.copy(path = currentPath()) }
 
     private fun currentPath() = if (metaSpeechOn() && metaSpeech.configured) RecognizerPath.META else engine.path(cloudAllowed())
 
-    fun startListening() {
+    /**
+     * Starts one listening session. With [prompt], it first asks (the Call and Navigate buttons, M4.3), and
+     * an answer that isn't a command of its own gets [prefix], so "Mom" after "Who should I call?" means "call Mom".
+     */
+    fun startListening(prompt: String? = null, prefix: String? = null) {
         val now = SystemClock.elapsedRealtime()
         if (now - lastTrigger < 300) return  // two triggers within 300 ms collapse to one session
         lastTrigger = now
@@ -86,10 +93,23 @@ class VoiceController(
             else -> Unit
         }
         retriedSilently = false
-        listen()
+        answerPrefix = prefix
+        if (prompt == null) listen() else say(prompt) { if (_state.value.phase == VoicePhase.IDLE) listen() }
     }
 
+    /** Runs a command from a button, such as Go home or Next, without showing "Heard". */
+    fun command(text: String) {
+        tts.stop()
+        speaking?.cancel()
+        _state.update { it.copy(phase = VoicePhase.PROCESSING, heard = "", message = "Working…", choices = emptyList()) }
+        work = scope.launch { say(runSafely { handler(text) { msg -> _state.update { s -> s.copy(message = msg) } } }) }
+    }
+
+    /** Closes the choice buttons without picking one. */
+    fun dismissChoices() = _state.update { it.copy(choices = emptyList()) }
+
     private fun listen() {
+        releaseCarChannel()
         focus.forListening()
         val meta = _state.value.path == RecognizerPath.META
         _state.update { it.copy(phase = VoicePhase.LISTENING, message = if (meta) "Listening… (Meta speech)" else "Listening…", heard = "", choices = emptyList()) }
@@ -133,7 +153,8 @@ class VoiceController(
             _state.update { s -> if (s.phase == VoicePhase.SPEAKING) s.copy(phase = VoicePhase.IDLE) else s }
             onDone()
         }
-        if (!useCarChannel()) {
+        val mac = carChannelMac()
+        if (mac == null) {
             tts.speak(result.text, onDone = finished)
             return
         }
@@ -141,7 +162,7 @@ class VoiceController(
         closeSco?.cancel()
         speaking?.cancel()
         speaking = scope.launch {
-            val viaCall = sco.open()
+            val viaCall = sco.open(mac)
             tts.speak(result.text, viaCall) {
                 // Held briefly, so back-to-back replies don't reopen it.
                 if (viaCall) closeSco = scope.launch { delay(1_500); sco.close() }
@@ -165,8 +186,11 @@ class VoiceController(
     /** Runs a transcript through the handler. Also the debug seam (§6.6) for typed transcripts. */
     fun handleTranscript(text: String) {
         tts.stop()
+        val prefix = answerPrefix
+        answerPrefix = null
+        val full = if (prefix != null && CommandParser.parse(text) is Command.Unknown) "$prefix $text" else text
         _state.update { it.copy(phase = VoicePhase.PROCESSING, heard = text, message = "Working…", choices = emptyList()) }
-        work = scope.launch { say(runSafely { handler(text) { msg -> _state.update { s -> s.copy(message = msg) } } }) }
+        work = scope.launch { say(runSafely { handler(full) { msg -> _state.update { s -> s.copy(message = msg) } } }) }
     }
 
     /** A tapped choice button, such as one of several contacts. */

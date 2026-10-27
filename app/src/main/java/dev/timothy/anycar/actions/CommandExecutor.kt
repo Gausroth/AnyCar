@@ -70,7 +70,7 @@ class CommandExecutor(
                 Command.Weather -> said += "Weather is coming in a later update."
                 Command.Time -> said += "It's ${ZonedDateTime.now().format(DateTimeFormatter.ofPattern("h:mm a", Locale.US))}."
                 Command.Diagnose -> said += if (metaAiOn()) {
-                    "When you're parked, tap Scan a light and point the camera at the dashboard."
+                    "When you're parked, tap More, then Scan a warning light, and point the camera at the dashboard."
                 } else {
                     "Engine diagnostics need a small adapter that plugs in under the dashboard. That arrives in a later version."
                 }

@@ -286,7 +286,8 @@ private fun bondedCars(ctx: Context): List<BondedCar> {
     }.getOrDefault(emptyList())
 }
 
-private fun Context.findActivity(): ComponentActivity {
+/** The activity behind a Compose context, which can be wrapped (for example inside a bottom sheet). */
+internal fun Context.findActivity(): ComponentActivity {
     var c = this
     while (c is ContextWrapper) {
         if (c is ComponentActivity) return c

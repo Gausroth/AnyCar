@@ -54,10 +54,14 @@ class CarSession(
     private val focus = AudioFocus(app)
     private val ttsLazy = lazy { TtsEngine(app, focus).also { it.enabled = ttsEnabled } }
     val tts: TtsEngine by ttsLazy
+    /** The car's audio links, also used to tell whether a car opened by hand is really connected. */
+    val sco = ScoLink(app)
+
     private val voiceLazy = lazy {
         VoiceController(
-            app, tts, focus, { cloudAllowed }, { metaSpeechOn }, metaSpeech, ScoLink(app),
-            useCarChannel = { carChannelOn && _connected.value },
+            app, tts, focus, { cloudAllowed }, { metaSpeechOn }, metaSpeech, sco,
+            // Whichever way car mode opened, as long as this car is the one on Bluetooth.
+            carChannelMac = { if (carChannelOn) _activeVehicle.value?.btMac else null },
         ) { text, progress -> handler(text, progress) }
     }
     val voice: VoiceController by voiceLazy
@@ -80,6 +84,12 @@ class CarSession(
     }
 
     fun setConnected(connected: Boolean) { _connected.value = connected }
+
+    /** Keeps the active car current when its saved profile changes, such as a new systems result. */
+    fun refresh(saved: List<VehicleProfile>) {
+        val id = _activeVehicle.value?.id ?: return
+        saved.firstOrNull { it.id == id }?.let { fresh -> _activeVehicle.compareAndSet(_activeVehicle.value, fresh) }
+    }
 
     /** Ends the drive. Car-mode screens observe [activeVehicle] and close when it becomes null. */
     fun exit() {

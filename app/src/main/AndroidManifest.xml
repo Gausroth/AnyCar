@@ -30,6 +30,7 @@
         <intent><action android:name="android.intent.action.VIEW" /><data android:scheme="geo" /></intent>
         <intent><action android:name="android.intent.action.VIEW" /><data android:scheme="google.navigation" /></intent>
         <intent><action android:name="android.media.action.IMAGE_CAPTURE" /></intent>
+        <intent><action android:name="android.intent.action.VOICE_COMMAND" /></intent>
         <package android:name="com.google.android.apps.maps" />
     </queries>
 
@@ -61,6 +62,21 @@
             android:showWhenLocked="true"
             android:turnScreenOn="true"
             tools:ignore="DiscouragedApi,LockedOrientationActivity" />
+
+        <!-- The steering-wheel voice button (M11). Disabled until a car passes the wheel-button test. -->
+        <activity
+            android:name=".ui.VoiceCommandActivity"
+            android:enabled="false"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.VOICE_COMMAND" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
 
         <!-- ACL_CONNECTED/DISCONNECTED are exempt from implicit-broadcast limits and are protected:
              only the system can send them. -->

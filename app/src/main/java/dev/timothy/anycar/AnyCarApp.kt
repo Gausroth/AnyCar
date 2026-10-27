@@ -18,6 +18,9 @@ import dev.timothy.anycar.voice.MetaSpeech
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import dev.timothy.anycar.capability.CapabilityChecker
+import dev.timothy.anycar.car.WheelButton
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class AnyCarApp : Application() {
@@ -46,9 +49,12 @@ class AppGraph(app: Application) {
     val session = CarSession(app, settings, appScope, MetaSpeech(meta))
     val executor = CommandExecutor(app, ExternalLauncher(app, session), ContactResolver(app)) { metaAiOn && meta.configured }
     private val router = CommandRouter(executor, MuseAgent(meta)) { metaAiOn }
+    val checker = CapabilityChecker(app, vehicles, settings) { meta.configured && settings.metaSpeechEnabled.first() }
 
     init {
         appScope.launch { settings.metaAiEnabled.collect { metaAiOn = it } }
+        appScope.launch { WheelButton.sync(app, vehicles.all()) }
+        appScope.launch { vehicles.observeAll().collect { session.refresh(it) } }
         session.handler = router::handle
         session.onExit = executor::clear
     }

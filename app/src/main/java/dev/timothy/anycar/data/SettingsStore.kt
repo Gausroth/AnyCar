@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -29,6 +30,12 @@ class SettingsStore(ctx: Context) {
     val voiceViaCarCall: Flow<Boolean> = flag(VOICE_VIA_CAR_CALL, true)
 
     suspend fun setVoiceViaCarCall(v: Boolean) = set(VOICE_VIA_CAR_CALL, v)
+
+    /** "auto" (night from 20:00 to 06:00), "day", or "night" (M4.4). */
+    val dayNightPref: Flow<String> = store.data.map { it[DAY_NIGHT] ?: "auto" }
+
+    suspend fun setDayNightPref(v: String) { store.edit { it[DAY_NIGHT] = v } }
+    suspend fun setTtsEnabled(v: Boolean) = set(TTS_ENABLED, v)
     suspend fun setFirstRunDone(v: Boolean) = set(FIRST_RUN_DONE, v)
     suspend fun setCloudSpeechAllowed(v: Boolean) = set(CLOUD_SPEECH_ALLOWED, v)
     suspend fun setMetaAiEnabled(v: Boolean) = set(META_AI_ENABLED, v)
@@ -47,5 +54,6 @@ class SettingsStore(ctx: Context) {
         val META_AI_ENABLED = booleanPreferencesKey("meta_ai_enabled")
         val META_SPEECH_ENABLED = booleanPreferencesKey("meta_speech_enabled")
         val VOICE_VIA_CAR_CALL = booleanPreferencesKey("voice_via_car_call")
+        val DAY_NIGHT = stringPreferencesKey("day_night_pref")
     }
 }

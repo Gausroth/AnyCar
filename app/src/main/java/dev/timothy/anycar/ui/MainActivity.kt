@@ -8,7 +8,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Scaffold
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import dev.timothy.anycar.ui.screens.MetaSettings
+import dev.timothy.anycar.ui.screens.SystemsReport
 import kotlinx.coroutines.launch
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -27,6 +33,9 @@ object Routes {
     const val FIRST_RUN = "first_run"
     const val ADD_CAR = "add_car"
     const val DEBUG = "debug"
+    const val SYSTEMS = "systems/{id}"
+
+    fun systems(id: Long) = "systems/$id"
 }
 
 class MainActivity : ComponentActivity() {
@@ -50,6 +59,7 @@ fun AnyCarNavHost(nav: NavHostController = rememberNavController()) {
             val metaAi by graph.settings.metaAiEnabled.collectAsStateWithLifecycle(initialValue = false)
             val metaSpeech by graph.settings.metaSpeechEnabled.collectAsStateWithLifecycle(initialValue = false)
             val viaCarCall by graph.settings.voiceViaCarCall.collectAsStateWithLifecycle(initialValue = true)
+            val spoken by graph.settings.ttsEnabled.collectAsStateWithLifecycle(initialValue = true)
             val scope = rememberCoroutineScope()
             HomeScreen(
                 vehicles = vehicles,
@@ -61,7 +71,18 @@ fun AnyCarNavHost(nav: NavHostController = rememberNavController()) {
                 onMetaSpeech = { on -> scope.launch { graph.settings.setMetaSpeechEnabled(on) } },
                 voiceViaCarCall = viaCarCall,
                 onVoiceViaCarCall = { on -> scope.launch { graph.settings.setVoiceViaCarCall(on) } },
+                spokenReplies = spoken,
+                onSpokenReplies = { on -> scope.launch { graph.settings.setTtsEnabled(on) } },
+                onSystemsReport = { v -> nav.navigate(Routes.systems(v.id)) },
             )
+        }
+        composable(Routes.SYSTEMS) { entry ->
+            val id = entry.arguments?.getString("id")?.toLongOrNull() ?: return@composable
+            Scaffold { insets ->
+                Column(Modifier.padding(insets).padding(24.dp)) {
+                    SystemsReport(id, large = false) { nav.popBackStack() }
+                }
+            }
         }
         composable(Routes.FIRST_RUN) {
             AddCarFlow(firstRun = true) {

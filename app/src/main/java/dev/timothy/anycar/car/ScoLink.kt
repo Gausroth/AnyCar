@@ -23,13 +23,27 @@ class ScoLink(ctx: Context) {
 
     val isOpen get() = Build.VERSION.SDK_INT >= 31 && audio.communicationDevice?.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
 
-    /** Opens the link and waits until audio can flow. False if there's no hands-free car or it doesn't come up. */
-    suspend fun open(timeoutMs: Long = 4_000): Boolean {
+    /** True when this car's Bluetooth audio (music or calls) is connected right now. Needs no permission. */
+    fun carConnected(mac: String): Boolean =
+        audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS).any { d ->
+            (d.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP || d.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) && d.address.equals(mac, ignoreCase = true)
+        }
+
+    /**
+     * Opens the link to the car with Bluetooth address [mac] and waits until audio can flow. False if that car
+     * isn't connected for calls or the link doesn't come up. Earbuds and other devices are never used.
+     */
+    suspend fun open(mac: String, timeoutMs: Long = 4_000): Boolean {
         if (Build.VERSION.SDK_INT < 31) return false
         if (isOpen) return true
         // A phone or VoIP call owns the channel; never touch it then.
         if (audio.mode == AudioManager.MODE_IN_CALL || audio.mode == AudioManager.MODE_IN_COMMUNICATION) return false
-        val sco = audio.availableCommunicationDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO } ?: return false
+        val devices = audio.availableCommunicationDevices.filter { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
+        val sco = devices.firstOrNull { it.address.equals(mac, ignoreCase = true) }
+        if (sco == null) {
+            Log.i(TAG, "Car not available for calls (call devices: ${devices.size})")
+            return false
+        }
         val up = CompletableDeferred<Unit>()
         val listener = AudioManager.OnCommunicationDeviceChangedListener { d ->
             if (d?.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) up.complete(Unit)
@@ -37,14 +51,19 @@ class ScoLink(ctx: Context) {
         audio.addOnCommunicationDeviceChangedListener(main, listener)
         try {
             audio.mode = AudioManager.MODE_IN_COMMUNICATION
-            if (!audio.setCommunicationDevice(sco)) { close(); return false }
+            if (!audio.setCommunicationDevice(sco)) {
+                Log.w(TAG, "Car call channel refused")
+                close()
+                return false
+            }
             if (withTimeoutOrNull(timeoutMs) { up.await() } == null && !isOpen) {
-                Log.w(TAG, "Car phone channel didn't open")
+                Log.w(TAG, "Car call channel didn't open")
                 close()
                 return false
             }
             // The head unit needs a moment to switch its speakers over, or the first words are cut off.
             delay(SWITCH_DELAY_MS)
+            Log.i(TAG, "Car call channel open")
             return true
         } catch (e: CancellationException) {
             close()  // the driver tapped Talk mid-open: don't leave the call channel up

@@ -29,7 +29,9 @@ class MetaSpeech(private val api: MetaApi) {
     suspend fun listen(onRecorded: () -> Unit = {}): String {
         val pcm = withContext(Dispatchers.IO) { record() }
         onRecorded()
-        return api.transcribe(wav(pcm))
+        val text = api.transcribe(wav(pcm))
+        if (text.isBlank()) throw NoSpeech()
+        return text
     }
 
     @SuppressLint("MissingPermission")
@@ -57,7 +59,8 @@ class MetaSpeech(private val api: MetaApi) {
             while (true) {
                 coroutineContext.ensureActive()
                 val elapsed = SystemClock.elapsedRealtime() - start
-                if (!speaking && elapsed > NO_SPEECH_MS) throw NoSpeech()
+                // No clear speech by now: send what was heard anyway and let Meta decide. Quiet speech still counts.
+                if (!speaking && elapsed > NO_SPEECH_MS) break
                 if (elapsed > MAX_MS) break
                 // Non-blocking, so a silenced mic can't park this thread past the deadlines.
                 val n = rec.read(frame, 0, FRAME, AudioRecord.READ_NON_BLOCKING)
@@ -76,7 +79,7 @@ class MetaSpeech(private val api: MetaApi) {
                     if (opening.size == 10) floor = minOf(opening.sorted()[5], FLOOR_CAP)
                     continue
                 }
-                val threshold = maxOf(floor * 2.5, MIN_THRESHOLD)
+                val threshold = maxOf(floor * 2.0, MIN_THRESHOLD)
                 if (rms > threshold) {
                     loud++
                     quietMs = 0
@@ -107,9 +110,10 @@ class MetaSpeech(private val api: MetaApi) {
         const val RATE = 16_000
         const val FRAME = 320              // 20 ms
         const val END_SILENCE_MS = 900     // a pause this long ends the command
-        const val NO_SPEECH_MS = 7_000L
+        const val NO_SPEECH_MS = 6_000L
         const val MAX_MS = 12_000L
-        const val MIN_THRESHOLD = 300.0
-        const val FLOOR_CAP = 1_500.0
+        // Calibrated on the Zenfone 8: a quiet room reads about 90, normal speech at arm's length several hundred.
+        const val MIN_THRESHOLD = 150.0
+        const val FLOOR_CAP = 800.0
     }
 }
